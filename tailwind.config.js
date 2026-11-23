@@ -8,22 +8,23 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        background: "var(--background)",
-        foreground: "var(--foreground)",
+        // Pure monochrome palette — zero color allowed
         wb: {
-          dark: "#0b0f17",
-          card: "#121824",
-          border: "#1f293d",
-          muted: "#94a3b8",
-          charity: "#10b981",    // Green for 30% Charity
-          grant: "#3b82f6",      // Blue for 60% Beneficiaries
-          platform: "#8b5cf6",   // Purple for 10% Platform
-          gold: "#f59e0b",
-        }
+          bg:       '#080808',
+          card:     '#111111',
+          elevated: '#1a1a1a',
+          border:   '#262626',
+          borderHi: '#3f3f3f',
+          muted:    '#71717a',
+          sub:      '#a1a1aa',
+          text:     '#e4e4e7',
+          white:    '#ffffff',
+        },
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
-      }
+        mono: ['JetBrains Mono', 'Menlo', 'Consolas', 'monospace'],
+      },
     },
   },
   plugins: [],

@@ -1,341 +1,136 @@
 'use client';
-
 import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { 
-  ShieldCheck, 
-  Lock, 
-  CheckCircle2, 
-  AlertTriangle, 
-  FileText, 
-  RefreshCw, 
-  ArrowRight, 
-  Send, 
-  Check, 
-  X,
-  UserCheck,
-  Scale,
-  Zap
-} from 'lucide-react';
-import { PayoutAuthorization } from '@/lib/types';
+import { RefreshCw, Send } from 'lucide-react';
 
 export default function AdminPage() {
-  const [cycle, setCycle] = useState<any>(null);
-  const [payouts, setPayouts] = useState<PayoutAuthorization[]>([]);
+  const [events, setEvents]   = useState<any[]>([]);
+  const [payouts, setPayouts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [msg, setMsg]         = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [checker, setChecker] = useState('Admin.B (Finance Director)');
 
-  // Checker release form state
-  const [checkerAdmin, setCheckerAdmin] = useState('Admin.Vikram_Malhotra (Finance Director)');
-  const [checkerNotes, setCheckerNotes] = useState('Verified bank account & hospital cost invoice. Approved.');
+  // Webhook simulator
+  const [simAmt, setSimAmt]           = useState('1000');
+  const [simProgram, setSimProgram]   = useState('DISTRICT');
+  const [simSending, setSimSending]   = useState(false);
 
-  // Webhook simulator state
-  const [simDonor, setSimDonor] = useState('Govind Nair');
-  const [simAmount, setSimAmount] = useState('10000');
-  const [simWebhookSending, setSimWebhookSending] = useState(false);
-
-  const fetchData = async () => {
+  const load = async () => {
     setLoading(true);
     try {
-      const [cRes, pRes] = await Promise.all([
-        fetch('/api/cycle'),
-        fetch('/api/payouts')
-      ]);
-
-      const cData = await cRes.json();
+      const [eRes, pRes] = await Promise.all([fetch('/api/events'), fetch('/api/payouts')]);
+      const eData = await eRes.json();
       const pData = await pRes.json();
-
-      setCycle(cData.cycle);
+      setEvents(eData.events || []);
       setPayouts(pData.payouts || []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { load(); }, []);
 
-  const handleCycleAction = async (action: 'CLOSE_AND_ALLOCATE' | 'REOPEN') => {
-    setActionMsg(null);
+  const cycleAction = async (action: string, eventId: string) => {
+    setMsg(null);
     try {
       const res = await fetch('/api/cycle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, cycleId: cycle.id })
+        body: JSON.stringify({ action, eventId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-
-      setActionMsg({
-        type: 'success',
-        text: action === 'CLOSE_AND_ALLOCATE'
-          ? `Cycle locked & 30/60/10 double-entry allocation journal posted! SHA-256 seal: ${data.result.cycle.stateHash}`
-          : 'Cycle reopened for voluntary contributions.'
-      });
-      fetchData();
-    } catch (err: any) {
-      setActionMsg({ type: 'error', text: err.message });
-    }
+      setMsg({ type: 'ok', text: `${action} complete${data.result?.event?.stateHash ? ' · Seal: ' + data.result.event.stateHash : ''}` });
+      load();
+    } catch (err: any) { setMsg({ type: 'err', text: err.message }); }
   };
 
-  const handleCheckerRelease = async (payoutId: string) => {
-    setActionMsg(null);
+  const releasePayout = async (payoutId: string) => {
+    setMsg(null);
     try {
       const res = await fetch('/api/payouts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'CHECKER_RELEASE',
-          payoutId,
-          adminName: checkerAdmin,
-          notes: checkerNotes
-        })
+        body: JSON.stringify({ action: 'CHECKER_RELEASE', payoutId, adminName: checker, notes: 'Verified and authorized.' }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-
-      setActionMsg({
-        type: 'success',
-        text: `Dual-Authorization Complete! Payout ${payoutId} settled. UTR: ${data.result.bankRef}`
-      });
-      fetchData();
-    } catch (err: any) {
-      setActionMsg({ type: 'error', text: err.message });
-    }
+      setMsg({ type: 'ok', text: `Payout released · UTR: ${data.result.bankRef}` });
+      load();
+    } catch (err: any) { setMsg({ type: 'err', text: err.message }); }
   };
 
-  const handleSimulateWebhook = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSimWebhookSending(true);
-    setActionMsg(null);
-
+  const simulateWebhook = async (e: React.FormEvent) => {
+    e.preventDefault(); setSimSending(true); setMsg(null);
+    const event = events.find(ev => ev.programType === simProgram && ev.status === 'OPEN');
+    if (!event) { setMsg({ type: 'err', text: `No OPEN event for ${simProgram}. Open one first.` }); setSimSending(false); return; }
     try {
       const res = await fetch('/api/contributions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          donorName: simDonor,
-          donorEmail: 'sim.donor@example.com',
-          amount: parseFloat(simAmount),
-          paymentMethod: 'UPI (Gateway Webhook Event)',
-          isAnonymous: false
-        })
+        body: JSON.stringify({ eventId: event.id, amount: parseFloat(simAmt), paymentMethod: 'SIM_WEBHOOK', isAnonymous: true }),
       });
-
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-
-      setActionMsg({
-        type: 'success',
-        text: `Gateway Webhook Ingested: ₹${simAmount} settled from ${simDonor}. Journal entry posted automatically.`
-      });
-      fetchData();
-    } catch (err: any) {
-      setActionMsg({ type: 'error', text: err.message });
-    } finally {
-      setSimWebhookSending(false);
-    }
+      setMsg({ type: 'ok', text: `Webhook ingested · ₹${simAmt} → Event ${event.id} · Ref: ${data.contribution.paymentRef}` });
+      load();
+    } catch (err: any) { setMsg({ type: 'err', text: err.message }); }
+    finally { setSimSending(false); }
   };
 
-  const formatINR = (val: number) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(val);
+  const fmt = (v: number) =>
+    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(v);
+
+  const STATUS_COLOR: Record<string, string> = {
+    DRAFT: '#52525b', LEGAL_APPROVAL: '#71717a', SCHEDULED: '#a1a1aa',
+    OPEN: '#ffffff', CLOSED: '#3f3f3f', ALLOCATED: '#a1a1aa', COMPLETED: '#71717a',
   };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-10">
-      
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-800">
+
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6" style={{ borderBottom: '1px solid #262626' }}>
         <div>
-          <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20 mb-2">
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Black Box Governance & Operations Console</span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-            Platform Administration & Maker-Checker Dual Control
-          </h1>
-          <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-            Enforces segregation of duties: high-value payouts require independent Maker initiation and Checker authorization.
+          <span className="label block mb-1">Black Box Governance Console</span>
+          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">Platform Administration</h1>
+          <p className="text-xs mt-1" style={{ color: '#71717a' }}>
+            Maker-Checker dual-authorization. No single admin can approve and release a payment.
           </p>
         </div>
-
-        <button
-          onClick={fetchData}
-          className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-lg bg-slate-900 border border-slate-700 hover:bg-slate-800 text-xs font-semibold text-slate-300 transition self-start md:self-center"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          <span>Refresh State</span>
+        <button onClick={load} className="btn-ghost self-start md:self-center">
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </button>
       </div>
 
-      {actionMsg && (
-        <div className={`p-4 rounded-xl text-xs font-medium border flex items-center space-x-2 ${
-          actionMsg.type === 'success'
-            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-            : 'bg-red-500/10 border-red-500/30 text-red-400'
-        }`}>
-          {actionMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
-          <span>{actionMsg.text}</span>
+      {msg && (
+        <div className="p-4 rounded-xl text-xs" style={{ background: '#111', border: `1px solid ${msg.type === 'ok' ? '#3f3f3f' : '#3f3f3f'}`, color: msg.type === 'ok' ? '#e4e4e7' : '#a1a1aa' }}>
+          {msg.text}
         </div>
       )}
 
-      {/* 1. FUNDING CYCLE CONTROLLER & FORMULAIC ALLOCATION */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xl">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-800">
-          <div>
-            <div className="flex items-center space-x-2">
-              <span className={`px-2 py-0.5 rounded text-[11px] font-bold border ${
-                cycle?.status === 'OPEN'
-                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                  : 'bg-purple-500/20 text-purple-400 border-purple-500/30'
-              }`}>
-                STATUS: {cycle?.status}
-              </span>
-              <span className="text-xs font-mono text-slate-400">Cycle #{cycle?.cycleNumber}</span>
-            </div>
-            <h2 className="text-xl font-black text-white mt-1">{cycle?.title}</h2>
-          </div>
-
-          {/* Action buttons */}
-          <div className="flex items-center space-x-3">
-            {cycle?.status === 'OPEN' ? (
-              <button
-                onClick={() => handleCycleAction('CLOSE_AND_ALLOCATE')}
-                className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-lg transition flex items-center space-x-1.5"
-              >
-                <Lock className="w-3.5 h-3.5" />
-                <span>Trigger 30/60/10 Allocation Lock</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => handleCycleAction('REOPEN')}
-                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg transition flex items-center space-x-1.5"
-              >
-                <Zap className="w-3.5 h-3.5" />
-                <span>Reopen Contribution Pool</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Current Pool Metrics */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-850">
-            <div className="text-[10px] text-slate-400 uppercase font-semibold">Gross Collected</div>
-            <div className="text-lg font-bold text-white font-mono mt-1">
-              {cycle ? formatINR(cycle.grossCollected) : '-'}
-            </div>
-          </div>
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-850">
-            <div className="text-[10px] text-slate-400 uppercase font-semibold">MDR Processing Fees</div>
-            <div className="text-lg font-bold text-slate-300 font-mono mt-1">
-              {cycle ? formatINR(cycle.processingFees) : '-'}
-            </div>
-          </div>
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-850">
-            <div className="text-[10px] text-slate-400 uppercase font-semibold">Net Distributable Pool</div>
-            <div className="text-lg font-bold text-emerald-400 font-mono mt-1">
-              {cycle ? formatINR(cycle.netDistributable) : '-'}
-            </div>
-          </div>
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-850">
-            <div className="text-[10px] text-slate-400 uppercase font-semibold">Contributors</div>
-            <div className="text-lg font-bold text-white font-mono mt-1">
-              {cycle ? cycle.contributorCount.toLocaleString('en-IN') : '-'}
-            </div>
-          </div>
-        </div>
-
-        {cycle?.stateHash && (
-          <div className="mt-6 p-4 rounded-xl bg-purple-950/20 border border-purple-500/30 text-xs font-mono text-purple-300">
-            <span className="font-bold">Cryptographic Ledger Seal:</span> {cycle.stateHash}
-          </div>
-        )}
-      </div>
-
-      {/* 2. MAKER-CHECKER DUAL PAYOUT QUEUE */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xl space-y-6">
-        <div>
-          <div className="flex items-center space-x-2">
-            <UserCheck className="w-4 h-4 text-emerald-400" />
-            <h2 className="text-lg font-bold text-white">Maker-Checker Dual Sign-off Payout Queue</h2>
-          </div>
-          <p className="text-xs text-slate-400 mt-1">
-            Section 5.4 Compliance: No single administrator can disburse funds. Checker must be distinct from Maker.
-          </p>
-        </div>
-
-        {/* Checker identity selector */}
-        <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-          <div>
-            <label className="block text-slate-400 font-semibold mb-1">Current Logged-in Checker (Second Reviewer)</label>
-            <select
-              value={checkerAdmin}
-              onChange={(e) => setCheckerAdmin(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-semibold"
-            >
-              <option value="Admin.Vikram_Malhotra (Finance Director)">Admin.Vikram_Malhotra (Finance Director)</option>
-              <option value="Admin.Priya_Verma (Sr. Compliance Officer)">Admin.Priya_Verma (Sr. Compliance Officer)</option>
-              <option value="Admin.Sunil_Kapoor (External Trust Auditor)">Admin.Sunil_Kapoor (External Trust Auditor)</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-slate-400 font-semibold mb-1">Checker Sign-off Notes</label>
-            <input
-              type="text"
-              value={checkerNotes}
-              onChange={(e) => setCheckerNotes(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white"
-            />
-          </div>
-        </div>
-
-        {/* Payouts Table */}
-        <div className="divide-y divide-slate-800/80">
-          {payouts.map((payout) => (
-            <div key={payout.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center space-x-2">
-                  <span className="font-mono text-xs font-bold text-white">{payout.id}</span>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                    payout.status === 'RELEASED'
-                      ? 'bg-emerald-500/20 text-emerald-400'
-                      : 'bg-amber-500/20 text-amber-400'
-                  }`}>
-                    {payout.status}
-                  </span>
+      {/* Event Controllers */}
+      <div>
+        <h2 className="text-sm font-bold text-white mb-4">Event Lifecycle Controller</h2>
+        <div className="space-y-3">
+          {events.map(ev => (
+            <div key={ev.id} className="card p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="badge">{ev.programType}</span>
+                  <span className="text-xs font-bold" style={{ color: STATUS_COLOR[ev.status] || '#71717a' }}>● {ev.status}</span>
                 </div>
-                <div className="text-sm font-bold text-white">{payout.recipientName}</div>
-                <div className="text-xs text-slate-400">
-                  Maker: <span className="text-slate-300 font-medium">{payout.makerAdmin}</span>
-                  {payout.checkerAdmin && (
-                    <span className="ml-3">Checker: <span className="text-emerald-400 font-medium">{payout.checkerAdmin}</span></span>
-                  )}
+                <div className="text-sm font-bold text-white">Event #{ev.eventNumber} · {ev.geographicScope}</div>
+                <div className="text-xs mt-0.5 mono" style={{ color: '#52525b' }}>
+                  Gross: {fmt(ev.grossCollected)} · Net: {fmt(ev.netDistributable)} · Contributors: {ev.contributorCount}
                 </div>
-                {payout.bankRef && (
-                  <div className="text-[11px] font-mono text-slate-500">
-                    Bank UTR: {payout.bankRef}
-                  </div>
-                )}
+                {ev.stateHash && <div className="text-[10px] mono mt-1" style={{ color: '#3f3f3f' }}>Seal: {ev.stateHash}</div>}
               </div>
-
-              <div className="flex items-center space-x-4 self-start sm:self-center">
-                <div className="text-right">
-                  <div className="text-xs text-slate-400">Grant Amount</div>
-                  <div className="text-base font-black text-white font-mono">{formatINR(payout.amount)}</div>
-                </div>
-
-                {payout.status === 'PENDING_CHECKER' && (
-                  <button
-                    onClick={() => handleCheckerRelease(payout.id)}
-                    className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-md transition flex items-center space-x-1.5"
-                  >
-                    <Check className="w-4 h-4" />
-                    <span>Authorize Release</span>
-                  </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {ev.status === 'DRAFT' && (
+                  <button onClick={() => cycleAction('OPEN', ev.id)} className="btn-primary text-xs">Open Event</button>
+                )}
+                {ev.status === 'OPEN' && (
+                  <button onClick={() => cycleAction('CLOSE_AND_ALLOCATE', ev.id)} className="btn-primary text-xs">Lock & Allocate</button>
+                )}
+                {ev.status === 'ALLOCATED' && (
+                  <span className="badge-white">Awaiting payouts</span>
                 )}
               </div>
             </div>
@@ -343,43 +138,83 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* 3. SIMULATED PAYMENT GATEWAY WEBHOOK INGESTER */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xl space-y-4">
-        <div className="flex items-center space-x-2">
-          <Zap className="w-4 h-4 text-amber-400" />
-          <h2 className="text-lg font-bold text-white">Simulate Payment Gateway Webhook (`payment.captured`)</h2>
-        </div>
-        <p className="text-xs text-slate-400">
-          Test real-time inbound payment events. Simulates HMAC-SHA256 signature validation, event deduplication, and automated journal postings.
+      {/* Maker-Checker Queue */}
+      <div>
+        <h2 className="text-sm font-bold text-white mb-2">Maker-Checker Payout Authorization Queue</h2>
+        <p className="text-xs mb-4" style={{ color: '#71717a' }}>
+          High-value transfers require two independent admins. Checker cannot be the same person as Maker.
         </p>
 
-        <form onSubmit={handleSimulateWebhook} className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-          <div>
-            <label className="block text-slate-400 font-semibold mb-1">Donor Name</label>
-            <input
-              type="text"
-              value={simDonor}
-              onChange={(e) => setSimDonor(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white"
-            />
+        <div className="card p-5 mb-4 flex flex-col sm:flex-row gap-4">
+          <div className="flex-1">
+            <label className="label block mb-1">Active Checker Identity</label>
+            <select value={checker} onChange={e => setChecker(e.target.value)} className="input text-xs">
+              <option value="Admin.B (Finance Director)">Admin.B (Finance Director)</option>
+              <option value="Admin.C (Compliance Officer)">Admin.C (Compliance Officer)</option>
+              <option value="Admin.D (External Auditor)">Admin.D (External Auditor)</option>
+            </select>
           </div>
-          <div>
-            <label className="block text-slate-400 font-semibold mb-1">Settled Amount (₹)</label>
-            <input
-              type="number"
-              value={simAmount}
-              onChange={(e) => setSimAmount(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white font-mono"
-            />
+        </div>
+
+        {payouts.length === 0 ? (
+          <div className="p-10 rounded-xl text-center text-xs card" style={{ color: '#52525b' }}>
+            No payouts pending. Payouts are created after an event is locked and allocations are verified.
+          </div>
+        ) : (
+          <div className="divide-y card overflow-hidden" style={{ borderColor: '#1a1a1a' }}>
+            {payouts.map(p => (
+              <div key={p.id} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="badge mono">{p.id}</span>
+                    <span className="badge">{p.status}</span>
+                  </div>
+                  <div className="text-sm font-bold text-white">{p.recipientRef}</div>
+                  <div className="text-xs mt-0.5" style={{ color: '#71717a' }}>
+                    Maker: {p.makerAdmin || '—'}
+                  </div>
+                  {p.bankRef && <div className="text-[11px] mono mt-1" style={{ color: '#3f3f3f' }}>UTR: {p.bankRef}</div>}
+                </div>
+                <div className="flex items-center gap-4 self-start sm:self-center">
+                  <div className="text-right">
+                    <div className="text-xs" style={{ color: '#52525b' }}>Amount</div>
+                    <div className="text-base font-black text-white mono">{fmt(p.amount)}</div>
+                  </div>
+                  {p.status === 'PENDING_CHECKER' && (
+                    <button onClick={() => releasePayout(p.id)} className="btn-primary text-xs">
+                      Authorize Release
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Webhook Simulator */}
+      <div className="card p-6">
+        <h2 className="text-sm font-bold text-white mb-1 flex items-center gap-2">
+          <Send className="w-4 h-4" /> Gateway Webhook Simulator
+        </h2>
+        <p className="text-xs mb-5" style={{ color: '#71717a' }}>
+          Simulates an inbound <code className="mono">payment.captured</code> event. Posts automatically to the double-entry ledger.
+          An OPEN event must exist for the selected program.
+        </p>
+        <form onSubmit={simulateWebhook} className="flex flex-col sm:flex-row gap-3">
+          <div className="flex-1">
+            <label className="label block mb-1">Program</label>
+            <select value={simProgram} onChange={e => setSimProgram(e.target.value)} className="input text-xs">
+              {['DISTRICT', 'STATE', 'COUNTRY', 'WORLD'].map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+          <div className="flex-1">
+            <label className="label block mb-1">Amount (₹)</label>
+            <input type="number" min="10" value={simAmt} onChange={e => setSimAmt(e.target.value)} className="input mono" />
           </div>
           <div className="flex items-end">
-            <button
-              type="submit"
-              disabled={simWebhookSending}
-              className="w-full py-2.5 px-4 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-md transition flex items-center justify-center space-x-1.5"
-            >
-              <Send className="w-3.5 h-3.5" />
-              <span>{simWebhookSending ? 'Ingesting...' : 'Send Gateway Webhook'}</span>
+            <button type="submit" disabled={simSending} className="btn-primary w-full sm:w-auto">
+              {simSending ? 'Sending…' : 'Fire Webhook'}
             </button>
           </div>
         </form>
@@ -388,4 +223,3 @@ export default function AdminPage() {
     </div>
   );
 }
-

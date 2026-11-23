@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { approveGrantByMaker, releasePayoutByChecker, store } from '@/lib/store';
+import { releasePayout, store } from '@/lib/store';
 
 export async function GET() {
   return NextResponse.json({
@@ -10,15 +10,10 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { action, payoutId, applicationId, amount, adminName, notes } = body;
-
-    if (action === 'MAKER_APPROVE') {
-      const result = approveGrantByMaker(applicationId, Number(amount), adminName, notes);
-      return NextResponse.json({ success: true, result });
-    }
+    const { action, payoutId, adminName, notes } = body;
 
     if (action === 'CHECKER_RELEASE') {
-      const result = releasePayoutByChecker(payoutId, adminName, notes);
+      const result = releasePayout(payoutId, adminName || 'Admin.B', notes || 'Authorized.');
       return NextResponse.json({ success: true, result });
     }
 
@@ -27,4 +22,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 }
-

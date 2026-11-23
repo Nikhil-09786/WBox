@@ -1,21 +1,17 @@
-import type { Metadata } from "next";
-import "./globals.css";
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
+import type { Metadata } from 'next';
+import './globals.css';
+import Navbar from '@/components/Navbar';
+import Footer from '@/components/Footer';
 
 export const metadata: Metadata = {
-  title: "WBox | White-Black Hybrid Philanthropy & Community Funding",
-  description: "Voluntary community funding with 30% Charity, 60% Beneficiary Grants, and 10% Operations backed by an immutable double-entry ledger.",
+  title: 'WBox | White-Black Community Contribution Platform',
+  description: 'Genuine, auditable community contribution platform. 50% First Recipient · 10% Second · 20% Charity · 10% Emergency Vault · 10% Operations.',
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark">
-      <body className="min-h-screen bg-slate-950 text-slate-100 flex flex-col antialiased selection:bg-emerald-500 selection:text-black">
+    <html lang="en">
+      <body className="min-h-screen flex flex-col antialiased" style={{ background: '#080808', color: '#e4e4e7' }}>
         <Navbar />
         <main className="flex-1">{children}</main>
         <Footer />
@@ -23,4 +19,3 @@ export default function RootLayout({
     </html>
   );
 }
-

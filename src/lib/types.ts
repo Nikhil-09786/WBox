@@ -1,22 +1,49 @@
-export type CycleStatus = 'DRAFT' | 'OPEN' | 'CLOSING' | 'ALLOCATED' | 'DISTRIBUTING' | 'COMPLETED';
+export type ProgramType = 'DISTRICT' | 'STATE' | 'COUNTRY' | 'WORLD';
+export type EventStatus =
+  | 'DRAFT'
+  | 'LEGAL_APPROVAL'
+  | 'SCHEDULED'
+  | 'OPEN'
+  | 'CLOSED'
+  | 'RECONCILED'
+  | 'ALLOCATED'
+  | 'COMPLETED'
+  | 'ARCHIVED';
 
-export interface FundingCycle {
+export interface EventProgram {
   id: string;
-  cycleNumber: number;
-  title: string;
+  name: string;
+  programType: ProgramType;
+  geographicScope: string;
+  frequency: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'ANNUALLY';
+  legalStatus: 'PENDING' | 'APPROVED' | 'SUSPENDED';
   description: string;
-  status: CycleStatus;
-  charityPct: number;       // default 30%
-  beneficiaryPct: number;   // default 60%
-  platformPct: number;      // default 10%
-  targetAmount: number;
+}
+
+export interface EventInstance {
+  id: string;
+  programId: string;
+  programType: ProgramType;
+  geographicScope: string;
+  eventNumber: number;
+  status: EventStatus;
+  currency: string;
+  // Allocation percentages — fixed and disclosed before contributions open
+  firstRecipientPct: number;    // 50%
+  secondRecipientPct: number;   // 10%
+  charityPct: number;           // 20%
+  emergencyVaultPct: number;    // 10%
+  platformPct: number;          // 10%
+  // Financials (genuine — start at zero)
   grossCollected: number;
   processingFees: number;
+  refunds: number;
+  chargebacks: number;
   netDistributable: number;
   contributorCount: number;
   opensAt: string;
   closesAt: string;
-  stateHash?: string;       // SHA-256 seal when locked/allocated
+  stateHash?: string;
 }
 
 export type AccountClassification = 'ASSET' | 'LIABILITY' | 'EQUITY' | 'REVENUE' | 'EXPENSE';
@@ -40,7 +67,15 @@ export interface JournalEntry {
   entryNumber: number;
   timestamp: string;
   description: string;
-  referenceType: 'CONTRIBUTION' | 'CYCLE_ALLOCATION' | 'GRANT_PAYOUT' | 'CHARITY_PAYOUT' | 'REFUND';
+  referenceType:
+    | 'CONTRIBUTION'
+    | 'EVENT_ALLOCATION'
+    | 'RECIPIENT_PAYOUT'
+    | 'CHARITY_TRANSFER'
+    | 'VAULT_DEPOSIT'
+    | 'VAULT_WITHDRAWAL'
+    | 'REFUND'
+    | 'CHARGEBACK';
   referenceId: string;
   postings: Posting[];
   isReversal?: boolean;
@@ -48,65 +83,70 @@ export interface JournalEntry {
 
 export interface Contribution {
   id: string;
-  cycleId: string;
-  donorName: string;
-  donorEmail: string;
+  eventId: string;
+  programType: ProgramType;
   amount: number;
   feeDeducted: number;
   netAmount: number;
   currency: string;
-  status: 'SUCCESS' | 'PENDING' | 'REFUNDED';
+  status: 'PENDING' | 'SUCCESS' | 'REFUNDED' | 'CHARGEBACK';
   paymentMethod: string;
-  paymentGatewayRef: string;
-  createdAt: string;
+  paymentRef: string;
   isAnonymous: boolean;
+  createdAt: string;
 }
 
-export interface Charity {
+export interface CharityOrganization {
   id: string;
-  name: string;
-  regNumber: string;
-  taxExemptCode: string; // 80G / 12A / 501(c)(3)
-  category: string;
-  verified: boolean;
-  allocatedAmount: number;
-  disbursedAmount: number;
-  impactSummary: string;
-  mission: string;
-  website: string;
+  legalName: string;
+  registrationRef: string;
+  verificationStatus: 'PENDING' | 'VERIFIED' | 'REJECTED';
+  authorizedPurpose: string;
   location: string;
+  totalReceived: number;
+  website: string;
 }
 
-export type GrantCategory = 'HEALTHCARE' | 'EDUCATION' | 'EMERGENCY' | 'LIVELIHOOD' | 'DISABILITY';
-
-export type GrantStatus = 'SUBMITTED' | 'UNDER_REVIEW' | 'APPROVED' | 'DISBURSED' | 'REJECTED';
-
-export interface GrantApplication {
+export interface EmergencyReserve {
   id: string;
-  cycleId: string;
-  applicantName: string;
-  applicantEmail: string;
-  category: GrantCategory;
-  requestedAmount: number;
-  approvedAmount: number;
-  status: GrantStatus;
-  publicSummary: string;
-  encryptedHardshipNote: string; // Black Box encrypted representation
-  submittedAt: string;
-  reviewedAt?: string;
-  payoutId?: string;
+  programId: string;
+  programType: ProgramType;
+  geographicScope: string;
+  currency: string;
+  principalBalance: number;
+  accruedReturns: number;
+  status: 'ACTIVE' | 'FROZEN';
 }
 
-export type PayoutStatus = 'PENDING_MAKER' | 'PENDING_CHECKER' | 'RELEASED' | 'REJECTED';
+export interface EmergencyRequest {
+  id: string;
+  reserveId: string;
+  applicantRef: string;
+  requestedAmount: number;
+  purpose: string;
+  verificationStatus: 'SUBMITTED' | 'UNDER_REVIEW' | 'BOARD_REVIEW' | 'APPROVED' | 'REJECTED';
+  boardDecision?: 'APPROVED' | 'REJECTED';
+  submittedAt: string;
+  resolvedAt?: string;
+}
+
+export interface BoardMember {
+  id: string;
+  role: string;
+  appointmentRef: string;
+  termStart: string;
+  termEnd: string;
+  independenceStatus: 'INDEPENDENT' | 'DISCLOSED_INTEREST';
+  active: boolean;
+}
 
 export interface PayoutAuthorization {
   id: string;
-  cycleId: string;
-  recipientType: 'BENEFICIARY' | 'CHARITY';
-  recipientId: string;
-  recipientName: string;
+  eventId: string;
+  recipientType: 'FIRST_RECIPIENT' | 'SECOND_RECIPIENT' | 'CHARITY' | 'EMERGENCY';
+  recipientRef: string;
   amount: number;
-  status: PayoutStatus;
+  status: 'PENDING_MAKER' | 'PENDING_CHECKER' | 'RELEASED' | 'REJECTED';
   makerAdmin: string | null;
   makerNotes: string | null;
   checkerAdmin: string | null;
@@ -115,4 +155,3 @@ export interface PayoutAuthorization {
   createdAt: string;
   releasedAt: string | null;
 }
-

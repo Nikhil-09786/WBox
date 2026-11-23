@@ -1,106 +1,100 @@
 # WBox (White-Black Box)
-## Digital Community Funding, Double-Entry Financial Ledger & Hybrid Transparency System
+## Technical & Governance Specification — Baseline Implementation
 
-> **Platform Version:** 1.0 (MVP)  
-> **Allocation Policy:** 30% Charity Fund + 60% Beneficiary Grants + 10% Platform Operations  
-> **Tech Stack:** Next.js 14 (App Router), TypeScript, Tailwind CSS, Lucide Icons, Double-Entry Ledger Engine  
-> **Compliance Standard:** Gratuitous Voluntary Philanthropy (Zero lottery / Zero prize draws / 100% need-based grants)
+> **Platform Version:** 1.0  
+> **Status:** Proposed Baseline Architecture  
+> **Visual Identity:** 100% Monochrome (Pure Black & White)  
+> **Data Integrity:** 100% Genuine Zero State (Zero fake data, zero mock amounts)  
+> **Allocation Model:** 50% First Recipient + 10% Second Recipient + 20% Direct Charity + 10% Permanent Emergency Vault + 10% Platform Operations
 
 ---
 
-## 1. Overview & Concept
+## 1. Product Architecture: Four Independent Programs
 
-**WBox** is an open, auditable community funding platform built on a hybrid transparency model:
+WBox operates four completely independent event programs:
+
+| Program | Frequency | Geographic Scope | Independence Rules |
+|---|---|---|---|
+| **District WBox** | Daily | Eligible district residents | No shared pool, no progression, separate reserves |
+| **State WBox** | Weekly | Eligible state residents | No shared pool, no progression, separate reserves |
+| **Country WBox** | Monthly | Eligible national residents | No shared pool, no progression, separate reserves |
+| **World WBox** | Annually | Permitted international jurisdictions | No shared pool, no progression, separate reserves |
+
+### Strict Independence Invariants
+- No shared recipient pool across programs.
+- No transfer of recipient allocations between events.
+- No automatic progression from district to state to country to world.
+- No shared Emergency Vault — each program maintains its own segregated reserve.
+- No use of another program's money to cover a shortfall.
+- Separate financial accounting, ledger postings, and audit statements for every event.
+
+---
+
+## 2. Financial Allocation Model (5 Buckets)
+
+Every eligible event allocation base is divided into five strictly defined buckets:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                        THE WBox HYBRID SYSTEM                        │
-├───────────────────────────────────┬────────────────────────────────────┤
-│     WHITE BOX: TRANSPARENCY       │        BLACK BOX: PRIVACY          │
-├───────────────────────────────────┼────────────────────────────────────┤
-│ • Append-only double-entry ledger │ • AES-256 envelope PII encryption  │
-│ • Real-time 30/60/10 distribution │ • Zero Donated-To-Grant bias rule  │
-│ • Public cycle close reports      │ • Dual-admin (Maker-Checker) auth  │
-│ • Cryptographic SHA-256 seal      │ • Webhook idempotency & fraud scan │
-└───────────────────────────────────┴────────────────────────────────────┘
+│               WBOX FIXED 5-BUCKET ALLOCATION (100%)                    │
+├──────────────────┬─────────────────┬───────────────────────────────────┤
+│ Bucket           │ Percentage      │ Purpose                           │
+├──────────────────┼─────────────────┼───────────────────────────────────┤
+│ First Recipient  │ 50%             │ Primary awarded event participant │
+│ Second Recipient │ 10%             │ Secondary awarded participant     │
+│ Direct Charity   │ 20%             │ Verified registered charities     │
+│ Emergency Vault  │ 10%             │ Permanent board-governed reserve  │
+│ Platform Ops     │ 10%             │ Disclosed operational fee         │
+└──────────────────┴─────────────────┴───────────────────────────────────┘
 ```
 
-1. **White Box (Public & Explainable):**
-   - Live funding cycle metrics (settled collections, contributor count, and days remaining).
-   - Real-time double-entry general ledger with balanced debits and credits ($\sum Debits \equiv \sum Credits$).
-   - Published 30/60/10 allocation terms locked before funds are collected.
-   - Verified 80G/tax-exempt charity utilization reports.
-2. **Black Box (Confidential & Protected):**
-   - Encrypted donor PII, banking details, and government identity documents.
-   - Encrypted hardship narratives for medical emergency and disaster applicants.
-   - Strict zero-bias air gap: grant reviewers cannot see whether an applicant has donated.
-   - Dual-admin (Maker-Checker) approval prevents single-admin embezzlement.
+**Net Allocation Rule:** Percentages are applied to the net settled allocation base after deducting disclosed payment gateway fees (~2% MDR). Allocations are locked and cryptographically sealed before an event opens.
 
 ---
 
-## 2. General Ledger Chart of Accounts (COA)
+## 3. General Ledger Chart of Accounts (COA)
+
+Every financial movement is logged using strict double-entry bookkeeping ($\sum \text{Debits} \equiv \sum \text{Credits}$):
 
 | Code | Account Name | Type | Description |
 |---|---|---|---|
-| `1000` | **Asset: Gateway Escrow Clearing** | Asset (Debit +) | Unsettled digital payments captured by the payment gateway |
-| `1010` | **Asset: Platform Bank Payout Account** | Asset (Debit +) | Liquid bank account utilized for charity and beneficiary disbursements |
-| `2000` | **Liability: Contributor Unallocated Pool** | Liability (Credit +) | Active cycle contributions held in trust prior to cycle allocation |
-| `2010` | **Liability: Charity Allocation Fund (30%)** | Liability (Credit +) | Earmarked funds for registered 80G NGO partners |
-| `2020` | **Liability: Beneficiary Grant Fund (60%)** | Liability (Credit +) | Earmarked funds for direct humanitarian grants |
-| `4000` | **Revenue: Platform Operating Fee (10%)** | Revenue (Credit +) | Disclosed operating revenue for servers, verification & compliance |
-| `5000` | **Expense: Payment Gateway Fees** | Expense (Debit +) | Merchant Discount Rate (MDR ~2%) transparently accounted for |
+| `1000` | **Asset: Payment Gateway Clearing** | Asset (Debit +) | Unsettled digital payments captured by gateway |
+| `1010` | **Asset: Platform Operating Bank Account** | Asset (Debit +) | Liquid bank account for approved disbursements |
+| `1020` | **Asset: Emergency Vault Custody Account** | Asset (Debit +) | Segregated custody account holding emergency reserves |
+| `2000` | **Liability: Contributor Pool (Unallocated)** | Liability (Credit +) | Unallocated contributions held during open event |
+| `2010` | **Liability: First Recipient Payable (50%)** | Liability (Credit +) | Earmarked for verified first recipient |
+| `2020` | **Liability: Second Recipient Payable (10%)** | Liability (Credit +) | Earmarked for verified second recipient |
+| `2030` | **Liability: Charity Payable (20%)** | Liability (Credit +) | Earmarked for verified registered charities |
+| `2040` | **Liability: Emergency Vault Deposit (10%)** | Liability (Credit +) | Restricted permanent reserve deposit |
+| `2050` | **Liability: Refund & Chargeback Control** | Liability (Credit +) | Amounts due back to contributors |
+| `4000` | **Revenue: Platform Operations (10%)** | Revenue (Credit +) | Disclosed operating revenue |
+| `5000` | **Expense: Payment Processing Fees (MDR)** | Expense (Debit +) | Transparent gateway MDR fee accounting |
 
 ---
 
-## 3. Key Pages & Routes
+## 4. Emergency Vault Governance (Section 4)
 
-- `/` — **Homepage:** Hero mission, live Cycle #1 progress card, 30/60/10 visualizer, verified charity showcase, and trust guarantees.
-- `/contribute` — **Contribute Page:** Real-time fee and 30/60/10 math calculator, anonymous contribution toggle, digital payment simulation, and instant downloadable receipt.
-- `/transparency` — **Public Transparency Dashboard:** Real-time Chart of Accounts, append-only journal entries explorer, and audit JSON export.
-- `/charities` — **Charity Directory:** Verified 80G partner NGOs, registration numbers, fund utilization, and partner onboarding application.
-- `/apply` — **Beneficiary Assistance Application:** Encrypted grant submission wizard, category selection, and live Application ID status tracker.
-- `/admin` — **Platform Governance Console:** Funding cycle lock controller, Maker-Checker dual authorization queue, and inbound webhook simulator.
+- **Permanent Accumulation:** The 10% reserve never expires and unused funds accumulate indefinitely.
+- **Segregated Custody:** Cannot be merged with operating accounts or used to cover operating deficits.
+- **Preservation-First Policy:** Speculative investments, cryptocurrencies, and loans to founders or employees are strictly prohibited.
+- **5-Member Independent Board:** Decisions require a minimum quorum of 4 of 5 members with 4 affirmative votes. The platform founder cannot unilaterally approve withdrawals.
 
 ---
 
-## 4. Quick Start & Developer Guide
+## 5. Development & Verification Commands
 
-### Installation
-```bash
+```powershell
 # Navigate to project directory
 cd "C:\Users\Nikhil Yadav\.gemini\antigravity\scratch\wb-box"
 
-# Install dependencies (already installed)
-npm install
-```
-
-### Run Unit Tests
-Verifies mathematical balance invariants ($\sum Debits = \sum Credits$) and 30/60/10 cycle allocations:
-```bash
+# Run double-entry accounting unit tests
 npm test
-```
 
-### Start Local Development Server
-```bash
+# Build production bundle
+npm run build
+
+# Start local development server
 npm run dev
 ```
-Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-### Production Build
-```bash
-npm run build
-npm start
-```
-
----
-
-## 5. Verification Checklist (PRD Section 21 Acceptance Criteria)
-
-- [x] Contribution creates unique financial records in ledger.
-- [x] Allocation calculations are mathematically balanced ($30\% + 60\% + 10\% \equiv 100\%$).
-- [x] Contributor can view exact fee breakdown (~2% MDR) prior to payment.
-- [x] Beneficiaries can apply with zero payment requirement.
-- [x] Maker-Checker dual authorization enforces `makerAdmin != checkerAdmin`.
-- [x] Double-entry ledger invariant verified ($\text{Assets} = \text{Liabilities} + \text{Revenue} - \text{Expenses}$).
-- [x] Sensitive applicant hardship data protected via encrypted vaults.
-
+Visit [http://localhost:3000](http://localhost:3000) to inspect the 100% monochrome, genuine-state platform.

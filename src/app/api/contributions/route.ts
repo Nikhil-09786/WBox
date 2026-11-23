@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { addContribution, store } from '@/lib/store';
+import { ProgramType } from '@/lib/types';
 
 export async function GET() {
-  // Public view: mask non-anonymous emails or details
   const publicList = store.contributions.map(c => ({
     id: c.id,
-    donorName: c.isAnonymous ? 'Kind Contributor' : c.donorName,
+    eventId: c.eventId,
+    programType: c.programType,
     amount: c.amount,
     currency: c.currency,
     status: c.status,
@@ -23,31 +24,39 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { donorName, donorEmail, amount, paymentMethod, isAnonymous } = body;
+    const { eventId, amount, paymentMethod, isAnonymous, programType } = body;
 
-    if (!amount || amount <= 0) {
+    if (!amount || Number(amount) <= 0) {
       return NextResponse.json({ error: 'Valid contribution amount is required' }, { status: 400 });
     }
 
-    if (store.currentCycle.status !== 'OPEN') {
-      return NextResponse.json({ error: 'Contributions are only accepted when cycle is OPEN' }, { status: 400 });
+    if (!eventId) {
+      return NextResponse.json({ error: 'eventId is required' }, { status: 400 });
     }
 
-    const contribution = addContribution(
-      donorName || 'Generous Supporter',
-      donorEmail || 'contributor@wb-box.org',
-      Number(amount),
-      paymentMethod || 'UPI',
-      !!isAnonymous
-    );
+    const event = store.events.find(e => e.id === eventId);
+    if (!event) {
+      return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+    }
+
+    if (event.status !== 'OPEN') {
+      return NextResponse.json({ error: 'This event is not open for contributions' }, { status: 400 });
+    }
+
+    const contribution = addContribution({
+      eventId,
+      programType: (programType || event.programType) as ProgramType,
+      amount: Number(amount),
+      paymentMethod: paymentMethod || 'UPI',
+      isAnonymous: !!isAnonymous
+    });
 
     return NextResponse.json({
       success: true,
       contribution,
-      cycle: store.currentCycle
+      event
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
-

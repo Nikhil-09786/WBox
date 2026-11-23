@@ -6,22 +6,14 @@ export class DoubleEntryLedgerEngine {
   private journal: JournalEntry[];
   private nextEntryNumber: number;
 
-  constructor(initialAccounts?: LedgerAccount[], initialJournal?: JournalEntry[]) {
+  constructor() {
     this.accounts = new Map();
-    this.journal = initialJournal ? [...initialJournal] : [];
-    this.nextEntryNumber = this.journal.length + 1;
+    this.journal = [];
+    this.nextEntryNumber = 1;
 
-    // Initialize accounts with default COA if not provided
-    if (initialAccounts && initialAccounts.length > 0) {
-      initialAccounts.forEach(acc => this.accounts.set(acc.code, { ...acc }));
-    } else {
-      Object.values(CHART_OF_ACCOUNTS).forEach(coa => {
-        this.accounts.set(coa.code, {
-          ...coa,
-          balance: 0
-        });
-      });
-    }
+    Object.values(CHART_OF_ACCOUNTS).forEach(coa => {
+      this.accounts.set(coa.code, { ...coa, balance: 0 });
+    });
   }
 
   public getAccounts(): LedgerAccount[] {
@@ -36,13 +28,9 @@ export class DoubleEntryLedgerEngine {
     return [...this.journal];
   }
 
-  /**
-   * Post a balanced journal entry.
-   * Enforces fundamental accounting equation: SUM(Debits) === SUM(Credits)
-   */
   public postJournalEntry(params: {
     description: string;
-    referenceType: 'CONTRIBUTION' | 'CYCLE_ALLOCATION' | 'GRANT_PAYOUT' | 'CHARITY_PAYOUT' | 'REFUND';
+    referenceType: JournalEntry['referenceType'];
     referenceId: string;
     postings: Posting[];
     isReversal?: boolean;
@@ -50,208 +38,203 @@ export class DoubleEntryLedgerEngine {
   }): JournalEntry {
     const { description, referenceType, referenceId, postings, isReversal, timestamp } = params;
 
-    // 1. Validate postings existence
     if (!postings || postings.length < 2) {
       throw new Error('A journal entry must contain at least two postings.');
     }
 
-    // 2. Compute debit and credit sums
     let totalDebit = 0;
     let totalCredit = 0;
 
-    for (const posting of postings) {
-      if (posting.debit < 0 || posting.credit < 0) {
-        throw new Error(`Negative amounts are prohibited. Account: ${posting.accountCode}`);
-      }
-      if (posting.debit > 0 && posting.credit > 0) {
-        throw new Error(`A single posting line cannot contain both debit and credit. Account: ${posting.accountCode}`);
-      }
-      if (!this.accounts.has(posting.accountCode)) {
-        throw new Error(`Unknown ledger account code: ${posting.accountCode}`);
-      }
-
-      totalDebit += posting.debit;
-      totalCredit += posting.credit;
+    for (const p of postings) {
+      if (p.debit < 0 || p.credit < 0) throw new Error(`Negative posting on account ${p.accountCode}`);
+      if (p.debit > 0 && p.credit > 0) throw new Error(`Single posting has both debit and credit on ${p.accountCode}`);
+      if (!this.accounts.has(p.accountCode)) throw new Error(`Unknown account: ${p.accountCode}`);
+      totalDebit  += p.debit;
+      totalCredit += p.credit;
     }
 
-    // Fix floating point epsilon (rounded to 2 decimal places)
-    const roundedDebit = Math.round(totalDebit * 100) / 100;
+    const roundedDebit  = Math.round(totalDebit  * 100) / 100;
     const roundedCredit = Math.round(totalCredit * 100) / 100;
-
     if (Math.abs(roundedDebit - roundedCredit) > 0.001) {
-      throw new Error(
-        `Journal entry out of balance! Total Debits: ₹${roundedDebit.toFixed(2)} != Total Credits: ₹${roundedCredit.toFixed(2)}`
-      );
+      throw new Error(`Out of balance — DR: ₹${roundedDebit} ≠ CR: ₹${roundedCredit}`);
     }
 
-    // 3. Update account balances based on account classification rules:
-    // ASSET & EXPENSE: Debit increases (+), Credit decreases (-)
-    // LIABILITY, EQUITY & REVENUE: Credit increases (+), Debit decreases (-)
-    for (const posting of postings) {
-      const account = this.accounts.get(posting.accountCode)!;
-      let balanceDelta = 0;
-
-      if (account.classification === 'ASSET' || account.classification === 'EXPENSE') {
-        balanceDelta = posting.debit - posting.credit;
-      } else {
-        // LIABILITY, REVENUE, EQUITY
-        balanceDelta = posting.credit - posting.debit;
-      }
-
-      account.balance = Math.round((account.balance + balanceDelta) * 100) / 100;
+    for (const p of postings) {
+      const acc = this.accounts.get(p.accountCode)!;
+      const delta =
+        acc.classification === 'ASSET' || acc.classification === 'EXPENSE'
+          ? p.debit - p.credit
+          : p.credit - p.debit;
+      acc.balance = Math.round((acc.balance + delta) * 100) / 100;
     }
 
-    // 4. Record immutable entry
     const entry: JournalEntry = {
-      id: `je_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: `je_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       entryNumber: this.nextEntryNumber++,
       timestamp: timestamp || new Date().toISOString(),
       description,
       referenceType,
       referenceId,
       postings,
-      isReversal: !!isReversal
+      isReversal: !!isReversal,
     };
 
     this.journal.push(entry);
     return entry;
   }
 
-  /**
-   * Helper: Record an incoming contribution
-   */
+  /** Record a confirmed contribution */
   public recordContribution(params: {
     contributionId: string;
-    donorName: string;
     grossAmount: number;
     feeAmount: number;
     netAmount: number;
   }): JournalEntry {
-    const { contributionId, donorName, grossAmount, feeAmount, netAmount } = params;
-
+    const { contributionId, grossAmount, feeAmount, netAmount } = params;
     return this.postJournalEntry({
-      description: `Contribution received from ${donorName} (Gross: ₹${grossAmount}, Fee: ₹${feeAmount})`,
+      description: `Contribution settled — Gross ₹${grossAmount}, MDR ₹${feeAmount}`,
       referenceType: 'CONTRIBUTION',
       referenceId: contributionId,
       postings: [
-        { accountCode: '1000', debit: grossAmount, credit: 0 }, // Asset: Gateway Escrow (+Gross)
-        { accountCode: '2000', debit: 0, credit: netAmount },   // Liability: Unallocated Pool (+Net)
-        { accountCode: '5000', debit: 0, credit: feeAmount }    // Expense: Gateway Fee
-      ]
+        { accountCode: '1000', debit: grossAmount, credit: 0 },
+        { accountCode: '2000', debit: 0, credit: netAmount },
+        { accountCode: '5000', debit: 0, credit: feeAmount },
+      ],
     });
   }
 
-  /**
-   * Helper: Execute the 30% Charity / 60% Beneficiary / 10% Platform allocation for a closing cycle
-   */
-  public recordCycleAllocation(params: {
-    cycleId: string;
-    cycleNumber: number;
+  /** Execute the 50/10/20/10/10 event allocation */
+  public recordEventAllocation(params: {
+    eventId: string;
+    eventLabel: string;
     netDistributable: number;
-    charityPct?: number;     // 30
-    beneficiaryPct?: number; // 60
-    platformPct?: number;    // 10
-  }): { entry: JournalEntry; charityAmount: number; beneficiaryAmount: number; platformAmount: number } {
-    const { cycleId, cycleNumber, netDistributable } = params;
-    const cPct = params.charityPct ?? 30;
-    const bPct = params.beneficiaryPct ?? 60;
+    firstPct?: number;    // 50
+    secondPct?: number;   // 10
+    charityPct?: number;  // 20
+    vaultPct?: number;    // 10
+    platformPct?: number; // 10
+  }): {
+    entry: JournalEntry;
+    firstAmount: number;
+    secondAmount: number;
+    charityAmount: number;
+    vaultAmount: number;
+    platformAmount: number;
+  } {
+    const {
+      eventId, eventLabel, netDistributable,
+    } = params;
+    const fPct = params.firstPct    ?? 50;
+    const sPct = params.secondPct   ?? 10;
+    const cPct = params.charityPct  ?? 20;
+    const vPct = params.vaultPct    ?? 10;
     const pPct = params.platformPct ?? 10;
 
-    if (cPct + bPct + pPct !== 100) {
-      throw new Error('Allocation percentages must sum to 100%');
+    if (fPct + sPct + cPct + vPct + pPct !== 100) {
+      throw new Error('Allocation percentages must sum to 100.');
     }
 
+    const firstAmount   = Math.round(netDistributable * (fPct / 100) * 100) / 100;
+    const secondAmount  = Math.round(netDistributable * (sPct / 100) * 100) / 100;
     const charityAmount = Math.round(netDistributable * (cPct / 100) * 100) / 100;
-    const beneficiaryAmount = Math.round(netDistributable * (bPct / 100) * 100) / 100;
-    // Platform absorbs any tiny 1-paise rounding discrepancy
-    const platformAmount = Math.round((netDistributable - charityAmount - beneficiaryAmount) * 100) / 100;
+    const vaultAmount   = Math.round(netDistributable * (vPct / 100) * 100) / 100;
+    // Platform absorbs any sub-paisa rounding residual
+    const platformAmount = Math.round(
+      (netDistributable - firstAmount - secondAmount - charityAmount - vaultAmount) * 100
+    ) / 100;
 
     const entry = this.postJournalEntry({
-      description: `Funding Cycle #${cycleNumber} Locked Allocation: 30% Charity, 60% Beneficiary Grants, 10% Platform Ops`,
-      referenceType: 'CYCLE_ALLOCATION',
-      referenceId: cycleId,
+      description: `${eventLabel} — Allocation locked: 50% 1st / 10% 2nd / 20% Charity / 10% Vault / 10% Ops`,
+      referenceType: 'EVENT_ALLOCATION',
+      referenceId: eventId,
       postings: [
-        { accountCode: '2000', debit: netDistributable, credit: 0 },   // Unallocated Pool cleared (-Net)
-        { accountCode: '2010', debit: 0, credit: charityAmount },      // Charity Fund (+30%)
-        { accountCode: '2020', debit: 0, credit: beneficiaryAmount },  // Beneficiary Grant Fund (+60%)
-        { accountCode: '4000', debit: 0, credit: platformAmount }      // Platform Operating Revenue (+10%)
-      ]
+        { accountCode: '2000', debit: netDistributable, credit: 0 },
+        { accountCode: '2010', debit: 0, credit: firstAmount   },
+        { accountCode: '2020', debit: 0, credit: secondAmount  },
+        { accountCode: '2030', debit: 0, credit: charityAmount },
+        { accountCode: '2040', debit: 0, credit: vaultAmount   },
+        { accountCode: '4000', debit: 0, credit: platformAmount },
+      ],
     });
 
-    return { entry, charityAmount, beneficiaryAmount, platformAmount };
+    return { entry, firstAmount, secondAmount, charityAmount, vaultAmount, platformAmount };
   }
 
-  /**
-   * Helper: Record Beneficiary Grant Payout
-   */
-  public recordBeneficiaryPayout(params: {
+  /** Record a recipient payout */
+  public recordRecipientPayout(params: {
     payoutId: string;
-    beneficiaryName: string;
+    label: string;
     amount: number;
+    isFirst: boolean;
   }): JournalEntry {
-    const { payoutId, beneficiaryName, amount } = params;
-
     return this.postJournalEntry({
-      description: `Grant payout settled to verified beneficiary: ${beneficiaryName}`,
-      referenceType: 'GRANT_PAYOUT',
-      referenceId: payoutId,
+      description: `Recipient payout — ${params.label}`,
+      referenceType: 'RECIPIENT_PAYOUT',
+      referenceId: params.payoutId,
       postings: [
-        { accountCode: '2020', debit: amount, credit: 0 }, // Liability: Beneficiary Fund decreased (-Amount)
-        { accountCode: '1010', debit: 0, credit: amount }  // Asset: Bank Payout Account decreased (-Amount)
-      ]
+        { accountCode: params.isFirst ? '2010' : '2020', debit: params.amount, credit: 0 },
+        { accountCode: '1010', debit: 0, credit: params.amount },
+      ],
     });
   }
 
-  /**
-   * Helper: Record Charity Payout
-   */
-  public recordCharityPayout(params: {
+  /** Record a charity transfer */
+  public recordCharityTransfer(params: {
     payoutId: string;
     charityName: string;
     amount: number;
   }): JournalEntry {
-    const { payoutId, charityName, amount } = params;
-
     return this.postJournalEntry({
-      description: `Charitable allocation disbursed to registered NGO: ${charityName}`,
-      referenceType: 'CHARITY_PAYOUT',
-      referenceId: payoutId,
+      description: `Charity transfer — ${params.charityName}`,
+      referenceType: 'CHARITY_TRANSFER',
+      referenceId: params.payoutId,
       postings: [
-        { accountCode: '2010', debit: amount, credit: 0 }, // Liability: Charity Fund decreased (-Amount)
-        { accountCode: '1010', debit: 0, credit: amount }  // Asset: Bank Payout Account decreased (-Amount)
-      ]
+        { accountCode: '2030', debit: params.amount, credit: 0 },
+        { accountCode: '1010', debit: 0, credit: params.amount },
+      ],
     });
   }
 
-  /**
-   * Verify fundamental accounting integrity across all accounts.
-   */
-  public verifyLedgerBalance(): { isBalanced: boolean; totalAssets: number; totalLiabilities: number; totalEquityRevenue: number; discrepancy: number } {
-    let assets = 0;
-    let liabilities = 0;
-    let equityRevenue = 0;
-    let expenses = 0;
+  /** Record Emergency Vault deposit (move from liability to segregated asset) */
+  public recordVaultDeposit(params: { eventId: string; amount: number }): JournalEntry {
+    return this.postJournalEntry({
+      description: `Emergency Vault deposit — segregated to custody account`,
+      referenceType: 'VAULT_DEPOSIT',
+      referenceId: params.eventId,
+      postings: [
+        { accountCode: '2040', debit: params.amount, credit: 0 },
+        { accountCode: '1020', debit: params.amount, credit: 0 }, // vault asset increases
+        { accountCode: '1010', debit: 0, credit: params.amount * 2 }, // net bank out
+      ],
+    });
+  }
 
+  /** Verify accounting balance */
+  public verifyLedgerBalance(): {
+    isBalanced: boolean;
+    totalAssets: number;
+    totalLiabilities: number;
+    totalRevenue: number;
+    totalExpenses: number;
+    discrepancy: number;
+  } {
+    let assets = 0, liabilities = 0, revenue = 0, expenses = 0;
     for (const acc of Array.from(this.accounts.values())) {
-      if (acc.classification === 'ASSET') assets += acc.balance;
-      else if (acc.classification === 'LIABILITY') liabilities += acc.balance;
-      else if (acc.classification === 'REVENUE' || acc.classification === 'EQUITY') equityRevenue += acc.balance;
-      else if (acc.classification === 'EXPENSE') expenses += acc.balance;
+      if (acc.classification === 'ASSET')    assets      += acc.balance;
+      if (acc.classification === 'LIABILITY') liabilities += acc.balance;
+      if (acc.classification === 'REVENUE')   revenue     += acc.balance;
+      if (acc.classification === 'EXPENSE')   expenses    += acc.balance;
     }
-
-    // GAAP Formula: Assets = Liabilities + Equity/Revenue - Expenses
-    // or Net Assets = Total Claims
-    const roundedAssets = Math.round(assets * 100) / 100;
-    const roundedClaims = Math.round((liabilities + equityRevenue - expenses) * 100) / 100;
-    const discrepancy = Math.abs(roundedAssets - roundedClaims);
-
+    const roundedA = Math.round(assets      * 100) / 100;
+    const roundedC = Math.round((liabilities + revenue - expenses) * 100) / 100;
+    const discrepancy = Math.abs(roundedA - roundedC);
     return {
       isBalanced: discrepancy < 0.01,
-      totalAssets: roundedAssets,
+      totalAssets: roundedA,
       totalLiabilities: Math.round(liabilities * 100) / 100,
-      totalEquityRevenue: Math.round(equityRevenue * 100) / 100,
-      discrepancy
+      totalRevenue:     Math.round(revenue      * 100) / 100,
+      totalExpenses:    Math.round(expenses      * 100) / 100,
+      discrepancy,
     };
   }
 }
-

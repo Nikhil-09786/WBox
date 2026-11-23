@@ -1,458 +1,257 @@
 'use client';
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { 
-  Heart, 
-  ShieldCheck, 
-  Building2, 
-  Users, 
-  Receipt, 
-  CheckCircle2, 
-  ArrowRight, 
-  Lock, 
-  CreditCard, 
-  Smartphone, 
-  Sparkles,
-  Download,
-  Printer
-} from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
+
+const PROGRAMS = ['DISTRICT', 'STATE', 'COUNTRY', 'WORLD'] as const;
+const PROGRAM_LABELS: Record<string, string> = {
+  DISTRICT: 'District WBox (Daily)',
+  STATE:    'State WBox (Weekly)',
+  COUNTRY:  'Country WBox (Monthly)',
+  WORLD:    'World WBox (Annual)',
+};
+const PRESETS = [100, 250, 500, 1000, 2500, 5000];
 
 export default function ContributePage() {
-  const [selectedAmount, setSelectedAmount] = useState<number>(500);
-  const [customAmount, setCustomAmount] = useState<string>('');
-  const [donorName, setDonorName] = useState<string>('');
-  const [donorEmail, setDonorEmail] = useState<string>('');
-  const [isAnonymous, setIsAnonymous] = useState<boolean>(false);
-  const [paymentMethod, setPaymentMethod] = useState<string>('UPI');
-  const [upiVpa, setUpiVpa] = useState<string>('user@okhdfcbank');
+  const [events, setEvents]           = useState<any[]>([]);
+  const [selectedEvent, setEvent]     = useState<string>('');
+  const [amount, setAmount]           = useState<number>(500);
+  const [custom, setCustom]           = useState('');
+  const [method, setMethod]           = useState('UPI');
+  const [anonymous, setAnonymous]     = useState(false);
+  const [submitting, setSubmitting]   = useState(false);
+  const [receipt, setReceipt]         = useState<any>(null);
+  const [error, setError]             = useState<string | null>(null);
 
-  const [processing, setProcessing] = useState<boolean>(false);
-  const [completedReceipt, setCompletedReceipt] = useState<any>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  useEffect(() => {
+    fetch('/api/events').then(r => r.json()).then(d => {
+      setEvents(d.events || []);
+    }).catch(() => {});
+  }, []);
 
-  const amountPresets = [100, 250, 500, 1000, 2500, 5000];
+  const gross   = custom ? parseFloat(custom) || 0 : amount;
+  const fee     = Math.round(gross * 0.02 * 100) / 100;
+  const net     = Math.max(0, Math.round((gross - fee) * 100) / 100);
+  const first   = Math.round(net * 0.50 * 100) / 100;
+  const second  = Math.round(net * 0.10 * 100) / 100;
+  const charity = Math.round(net * 0.20 * 100) / 100;
+  const vault   = Math.round(net * 0.10 * 100) / 100;
+  const platform= Math.round((net - first - second - charity - vault) * 100) / 100;
 
-  const effectiveAmount = customAmount ? parseFloat(customAmount) || 0 : selectedAmount;
-  const processingFee = Math.round(effectiveAmount * 0.02 * 100) / 100; // 2% MDR fee
-  const netAmount = Math.max(0, Math.round((effectiveAmount - processingFee) * 100) / 100);
-
-  // 30 / 60 / 10 math
-  const charityAmount = Math.round(netAmount * 0.30 * 100) / 100;
-  const beneficiaryAmount = Math.round(netAmount * 0.60 * 100) / 100;
-  const platformAmount = Math.round((netAmount - charityAmount - beneficiaryAmount) * 100) / 100;
-
-  const handlePresetClick = (amt: number) => {
-    setSelectedAmount(amt);
-    setCustomAmount('');
-  };
-
-  const handleCustomChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setCustomAmount(e.target.value);
-  };
+  const openEvents = events.filter(e => e.status === 'OPEN');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (effectiveAmount < 10) {
-      setErrorMsg('Minimum voluntary contribution is ₹10.');
-      return;
-    }
-    setErrorMsg(null);
-    setProcessing(true);
-
+    if (gross < 10) { setError('Minimum contribution is ₹10'); return; }
+    if (!selectedEvent) { setError('Select an event to contribute to'); return; }
+    setError(null); setSubmitting(true);
     try {
       const res = await fetch('/api/contributions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          donorName: isAnonymous ? 'Kind Contributor' : (donorName || 'Generous Donor'),
-          donorEmail: donorEmail || 'contributor@wb-box.org',
-          amount: effectiveAmount,
-          paymentMethod,
-          isAnonymous
-        })
+        body: JSON.stringify({ eventId: selectedEvent, amount: gross, paymentMethod: method, isAnonymous: anonymous }),
       });
-
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Payment failed');
-
-      setCompletedReceipt(data.contribution);
+      if (!res.ok) throw new Error(data.error);
+      setReceipt(data.contribution);
     } catch (err: any) {
-      setErrorMsg(err.message);
+      setError(err.message);
     } finally {
-      setProcessing(false);
+      setSubmitting(false);
     }
   };
 
-  const formatINR = (val: number) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(val);
-  };
+  const fmt = (v: number) =>
+    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(v);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-      
-      {/* Title */}
-      <div className="text-center max-w-2xl mx-auto mb-10">
-        <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mb-3">
-          <ShieldCheck className="w-3.5 h-3.5" />
-          <span>Formulaic & Non-Custodial Allocation</span>
-        </div>
-        <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
-          Make a Voluntary Contribution
-        </h1>
-        <p className="mt-2 text-sm text-slate-400">
-          Every contribution is immediately logged into the double-entry accounting ledger. See the exact distribution of your money before you pay.
+      <div className="mb-8">
+        <span className="label">Voluntary Contribution</span>
+        <h1 className="text-2xl sm:text-3xl font-black text-white mt-1">Contribute to an Event</h1>
+        <p className="text-xs mt-1" style={{ color: '#71717a' }}>
+          Every contribution is immediately recorded in the double-entry ledger. The allocation is shown before you confirm.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        
-        {/* Left Column: Contribution Form */}
-        <div className="lg:col-span-7 bg-slate-900/90 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xl">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            
-            {/* Amount Presets */}
-            <div>
-              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
-                Select Contribution Amount (INR)
-              </label>
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                {amountPresets.map((amt) => {
-                  const isSelected = selectedAmount === amt && !customAmount;
-                  return (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => handlePresetClick(amt)}
-                      className={`py-2.5 rounded-xl font-bold text-sm transition border ${
-                        isSelected
-                          ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md shadow-emerald-500/20'
-                          : 'bg-slate-950 text-slate-200 border-slate-800 hover:border-slate-700'
-                      }`}
-                    >
-                      ₹{amt}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Custom Amount Input */}
-              <div className="mt-3 relative">
-                <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400 font-bold text-sm pointer-events-none">
-                  ₹
-                </span>
-                <input
-                  type="number"
-                  placeholder="Or enter custom amount (e.g. 2000)"
-                  value={customAmount}
-                  onChange={handleCustomChange}
-                  min="10"
-                  step="10"
-                  className="w-full pl-8 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm font-semibold text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
-                />
-              </div>
-            </div>
-
-            {/* Donor Information */}
-            <div className="pt-4 border-t border-slate-800/80 space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Donor Details</span>
-                <label className="flex items-center space-x-2 cursor-pointer text-xs text-slate-400 select-none">
-                  <input
-                    type="checkbox"
-                    checked={isAnonymous}
-                    onChange={(e) => setIsAnonymous(e.target.checked)}
-                    className="rounded border-slate-700 text-emerald-500 focus:ring-0 bg-slate-950 w-3.5 h-3.5"
-                  />
-                  <span>Contribute Anonymously</span>
-                </label>
-              </div>
-
-              {!isAnonymous && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-400 mb-1">Your Full Name</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Rahul Sharma"
-                      value={donorName}
-                      onChange={(e) => setDonorName(e.target.value)}
-                      className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-400 mb-1">Email (For Digital Tax Receipt)</label>
-                    <input
-                      type="email"
-                      placeholder="rahul@example.com"
-                      value={donorEmail}
-                      onChange={(e) => setDonorEmail(e.target.value)}
-                      className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Payment Method Selector */}
-            <div className="pt-4 border-t border-slate-800/80">
-              <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
-                Digital Payment Method
-              </label>
-              <div className="grid grid-cols-3 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('UPI')}
-                  className={`p-3 rounded-xl border text-left flex flex-col justify-between transition ${
-                    paymentMethod === 'UPI'
-                      ? 'border-emerald-500 bg-emerald-500/10 text-white'
-                      : 'border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700'
-                  }`}
-                >
-                  <Smartphone className="w-4 h-4 mb-2 text-emerald-400" />
-                  <div>
-                    <div className="text-xs font-bold text-white">UPI (Instant)</div>
-                    <div className="text-[10px] text-slate-400">GPay, PhonePe, Paytm</div>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('CARD')}
-                  className={`p-3 rounded-xl border text-left flex flex-col justify-between transition ${
-                    paymentMethod === 'CARD'
-                      ? 'border-emerald-500 bg-emerald-500/10 text-white'
-                      : 'border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700'
-                  }`}
-                >
-                  <CreditCard className="w-4 h-4 mb-2 text-blue-400" />
-                  <div>
-                    <div className="text-xs font-bold text-white">Debit / Credit</div>
-                    <div className="text-[10px] text-slate-400">Visa, Mastercard, RuPay</div>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('NETBANKING')}
-                  className={`p-3 rounded-xl border text-left flex flex-col justify-between transition ${
-                    paymentMethod === 'NETBANKING'
-                      ? 'border-emerald-500 bg-emerald-500/10 text-white'
-                      : 'border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700'
-                  }`}
-                >
-                  <Building2 className="w-4 h-4 mb-2 text-purple-400" />
-                  <div>
-                    <div className="text-xs font-bold text-white">Net Banking</div>
-                    <div className="text-[10px] text-slate-400">HDFC, ICICI, SBI</div>
-                  </div>
-                </button>
-              </div>
-
-              {paymentMethod === 'UPI' && (
-                <div className="mt-3">
-                  <label className="block text-[11px] font-medium text-slate-400 mb-1">UPI ID / VPA</label>
-                  <input
-                    type="text"
-                    value={upiVpa}
-                    onChange={(e) => setUpiVpa(e.target.value)}
-                    className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-mono text-emerald-400 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              )}
-            </div>
-
-            {errorMsg && (
-              <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
-                {errorMsg}
-              </div>
-            )}
-
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={processing || effectiveAmount < 10}
-              className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-sm shadow-xl shadow-emerald-500/20 transition flex items-center justify-center space-x-2 disabled:opacity-50 active:scale-[0.99]"
-            >
-              {processing ? (
-                <span>Settling via Payment Gateway...</span>
-              ) : (
-                <>
-                  <Heart className="w-4 h-4 fill-slate-950" />
-                  <span>Confirm & Contribute {formatINR(effectiveAmount)}</span>
-                </>
-              )}
-            </button>
-
-            <p className="text-[11px] text-slate-500 text-center leading-relaxed">
-              By contributing, you acknowledge that contributions are voluntary donations accounted for under the published 30/60/10 funding policy. Not eligible for lottery or prize returns.
-            </p>
-
-          </form>
-        </div>
-
-        {/* Right Column: Real-Time Transparent Allocation Breakdown */}
-        <div className="lg:col-span-5 space-y-6">
-          
-          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-              <h3 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center space-x-1.5">
-                <Receipt className="w-4 h-4 text-emerald-400" />
-                <span>Transparent Allocation Summary</span>
-              </h3>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                100% DISCLOSED
-              </span>
-            </div>
-
-            {/* Breakdown List */}
-            <div className="mt-4 space-y-3.5 text-xs">
-              
-              <div className="flex justify-between items-center">
-                <span className="text-slate-400">Total Contribution (Gross)</span>
-                <span className="font-extrabold text-white text-base">{formatINR(effectiveAmount)}</span>
-              </div>
-
-              <div className="flex justify-between items-center text-slate-400 py-1.5 border-y border-slate-800/60">
-                <span className="flex items-center space-x-1">
-                  <span>Payment Gateway Processing Fee (MDR ~2%)</span>
-                </span>
-                <span className="font-mono text-slate-300">-{formatINR(processingFee)}</span>
-              </div>
-
-              <div className="flex justify-between items-center bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-                <span className="font-bold text-white">Net Distributable Pool</span>
-                <span className="font-extrabold text-emerald-400">{formatINR(netAmount)}</span>
-              </div>
-
-              {/* The 3 Pillars */}
-              <div className="space-y-2 pt-2">
-                
-                <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20">
-                  <div className="flex justify-between items-center font-bold">
-                    <span className="text-emerald-400">30% Charity Fund</span>
-                    <span className="text-white font-mono">{formatINR(charityAmount)}</span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    Distributed to verified registered NGOs for broad social programs (healthcare, child literacy, meal relief).
-                  </p>
-                </div>
-
-                <div className="p-3 rounded-xl bg-blue-500/5 border border-blue-500/20">
-                  <div className="flex justify-between items-center font-bold">
-                    <span className="text-blue-400">60% Beneficiary Grants</span>
-                    <span className="text-white font-mono">{formatINR(beneficiaryAmount)}</span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    Direct lifeline grants to verified applicants in acute medical or emergency distress (strictly need-based).
-                  </p>
-                </div>
-
-                <div className="p-3 rounded-xl bg-purple-500/5 border border-purple-500/20">
-                  <div className="flex justify-between items-center font-bold">
-                    <span className="text-purple-400">10% Platform Operations</span>
-                    <span className="text-white font-mono">{formatINR(platformAmount)}</span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    Infrastructure hosting, verification team, continuous audit logs, and security engineering.
-                  </p>
-                </div>
-
-              </div>
-
-            </div>
-
-            {/* Invariant guarantee */}
-            <div className="mt-5 pt-4 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
-              <span className="flex items-center space-x-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Sum: ₹{charityAmount + beneficiaryAmount + platformAmount} === Net Pool</span>
-              </span>
-              <span className="font-mono text-emerald-400 font-bold">0.00 Error</span>
-            </div>
-
-          </div>
-
-          {/* Trust box */}
-          <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 text-xs space-y-2">
-            <div className="flex items-center space-x-2 text-white font-bold">
-              <Lock className="w-4 h-4 text-emerald-400" />
-              <span>Independent Accounting Guarantee</span>
-            </div>
-            <p className="text-slate-400 leading-relaxed text-[11px]">
-              Every confirmed payment triggers an automated journal entry inside our append-only accounting ledger. You can inspect all ledger postings publicly on the <Link href="/transparency" className="text-emerald-400 underline font-medium">Transparency Dashboard</Link>.
-            </p>
-          </div>
-
-        </div>
-
-      </div>
-
-      {/* COMPLETED DIGITAL RECEIPT MODAL */}
-      {completedReceipt && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-750 rounded-2xl max-w-lg w-full p-6 sm:p-8 shadow-2xl relative">
-            
-            <div className="text-center pb-4 border-b border-slate-800">
-              <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center mx-auto mb-3">
-                <CheckCircle2 className="w-7 h-7" />
-              </div>
-              <h3 className="text-xl font-black text-white">Contribution Successful!</h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Your payment has been settled and verified on the public ledger.
-              </p>
-            </div>
-
-            {/* Receipt Details */}
-            <div className="py-4 space-y-2.5 text-xs font-mono">
-              <div className="flex justify-between py-1 border-b border-slate-800/60">
-                <span className="text-slate-400">Receipt ID:</span>
-                <span className="text-white font-bold">{completedReceipt.id}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-800/60">
-                <span className="text-slate-400">Contributor:</span>
-                <span className="text-white">{completedReceipt.donorName}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-800/60">
-                <span className="text-slate-400">Gross Amount:</span>
-                <span className="text-emerald-400 font-bold text-sm">₹{completedReceipt.amount.toLocaleString('en-IN')}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-800/60">
-                <span className="text-slate-400">Gateway Ref:</span>
-                <span className="text-slate-300">{completedReceipt.paymentGatewayRef}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-800/60">
-                <span className="text-slate-400">Allocation:</span>
-                <span className="text-slate-300">30% Charity | 60% Grants | 10% Ops</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-slate-400">Timestamp:</span>
-                <span className="text-slate-300">{new Date(completedReceipt.createdAt).toLocaleString('en-IN')}</span>
-              </div>
-            </div>
-
-            {/* Action buttons */}
-            <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row gap-3">
-              <Link
-                href="/transparency"
-                className="flex-1 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs text-center transition flex items-center justify-center space-x-1.5"
-              >
-                <span>View on Public Ledger</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
-              <button
-                onClick={() => setCompletedReceipt(null)}
-                className="py-2.5 px-5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition"
-              >
-                Done
-              </button>
-            </div>
-
-          </div>
+      {openEvents.length === 0 && (
+        <div className="p-6 rounded-xl mb-8 text-sm text-center" style={{ background: '#111111', border: '1px solid #262626', color: '#71717a' }}>
+          <strong className="text-white block mb-1">No events are currently open for contributions.</strong>
+          All programs are in DRAFT or LEGAL_APPROVAL status. Events will only open once legal clearance is confirmed for each jurisdiction.
         </div>
       )}
 
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="lg:col-span-7 card p-6 sm:p-8 space-y-6">
+
+          {/* Event Selector */}
+          <div>
+            <label className="label block mb-2">Select Event</label>
+            <select
+              value={selectedEvent}
+              onChange={e => setEvent(e.target.value)}
+              className="input"
+            >
+              <option value="">— Choose an open event —</option>
+              {openEvents.map(ev => (
+                <option key={ev.id} value={ev.id}>
+                  {PROGRAM_LABELS[ev.programType]} · Event #{ev.eventNumber} · {ev.geographicScope}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Amount Presets */}
+          <div>
+            <label className="label block mb-2">Contribution Amount (INR)</label>
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-3">
+              {PRESETS.map(p => (
+                <button key={p} type="button"
+                  onClick={() => { setAmount(p); setCustom(''); }}
+                  className={`py-2.5 rounded-lg text-sm font-bold border transition ${
+                    amount === p && !custom
+                      ? 'bg-white text-black border-white'
+                      : 'border-[#262626] text-[#a1a1aa] hover:border-[#3f3f3f] hover:text-white'
+                  }`}
+                  style={{ background: amount === p && !custom ? '#fff' : '#111' }}
+                >
+                  ₹{p}
+                </button>
+              ))}
+            </div>
+            <div className="relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold" style={{ color: '#52525b' }}>₹</span>
+              <input type="number" min="10" step="10" placeholder="Custom amount"
+                value={custom} onChange={e => setCustom(e.target.value)}
+                className="input pl-7 mono" />
+            </div>
+          </div>
+
+          {/* Payment Method */}
+          <div>
+            <label className="label block mb-2">Payment Method</label>
+            <div className="grid grid-cols-3 gap-2">
+              {['UPI', 'CARD', 'NETBANKING'].map(m => (
+                <button key={m} type="button" onClick={() => setMethod(m)}
+                  className={`p-3 rounded-lg border text-xs font-bold transition ${
+                    method === m
+                      ? 'border-white bg-white text-black'
+                      : 'border-[#262626] text-[#71717a] hover:border-[#3f3f3f]'
+                  }`}
+                  style={{ background: method === m ? '#fff' : '#111' }}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Anonymous toggle */}
+          <label className="flex items-center gap-2 cursor-pointer select-none text-xs" style={{ color: '#a1a1aa' }}>
+            <input type="checkbox" checked={anonymous} onChange={e => setAnonymous(e.target.checked)}
+              className="rounded w-3.5 h-3.5" />
+            Contribute anonymously (name not shown publicly)
+          </label>
+
+          {error && <div className="p-3 rounded-lg text-xs" style={{ background: '#1a1a1a', border: '1px solid #3f3f3f', color: '#a1a1aa' }}>{error}</div>}
+
+          <button type="submit" disabled={submitting || openEvents.length === 0 || gross < 10}
+            className="btn-primary w-full justify-center py-3.5 text-sm">
+            {submitting ? 'Processing…' : `Confirm ₹${gross.toLocaleString('en-IN')} Contribution`}
+          </button>
+
+          <p className="text-[11px] text-center" style={{ color: '#52525b' }}>
+            Contributions are voluntary. No returns, profits or prize guarantees. Allocations are fixed per the published event policy.
+          </p>
+        </form>
+
+        {/* Real-time Allocation Breakdown */}
+        <div className="lg:col-span-5 space-y-4">
+          <div className="card p-6">
+            <div className="flex items-center justify-between pb-4 mb-4" style={{ borderBottom: '1px solid #1a1a1a' }}>
+              <h3 className="text-sm font-bold text-white">Transparent Allocation</h3>
+              <span className="badge">DISCLOSED</span>
+            </div>
+
+            <div className="space-y-3 text-xs mono">
+              <div className="flex justify-between">
+                <span style={{ color: '#71717a' }}>Gross contribution</span>
+                <span className="font-bold text-white">{fmt(gross)}</span>
+              </div>
+              <div className="flex justify-between py-1.5" style={{ borderTop: '1px solid #1a1a1a', borderBottom: '1px solid #1a1a1a' }}>
+                <span style={{ color: '#71717a' }}>Gateway fee (~2% MDR)</span>
+                <span style={{ color: '#52525b' }}>−{fmt(fee)}</span>
+              </div>
+              <div className="flex justify-between font-bold">
+                <span style={{ color: '#a1a1aa' }}>Net distributable</span>
+                <span className="text-white">{fmt(net)}</span>
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-2">
+              {[
+                { pct: '50%', label: 'First Recipient',   val: first   },
+                { pct: '10%', label: 'Second Recipient',  val: second  },
+                { pct: '20%', label: 'Direct Charity',    val: charity },
+                { pct: '10%', label: 'Emergency Vault',   val: vault   },
+                { pct: '10%', label: 'Platform Ops',      val: platform},
+              ].map((r, i) => (
+                <div key={i} className="flex items-center justify-between p-3 rounded-lg text-xs mono"
+                  style={{ background: '#080808', border: '1px solid #1a1a1a' }}>
+                  <div className="flex items-center gap-2">
+                    <span className="font-black text-white">{r.pct}</span>
+                    <span style={{ color: '#71717a' }}>{r.label}</span>
+                  </div>
+                  <span className="font-bold text-white">{fmt(r.val)}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 pt-3 flex justify-between text-[11px] mono" style={{ borderTop: '1px solid #1a1a1a', color: '#52525b' }}>
+              <span>Sum check</span>
+              <span className="text-white">{fmt(first + second + charity + vault + platform)} ≡ {fmt(net)}</span>
+            </div>
+          </div>
+
+          <div className="card p-5 text-xs" style={{ color: '#71717a' }}>
+            <strong className="text-white block mb-1">Ledger guarantee</strong>
+            Every confirmed payment triggers an append-only double-entry journal entry. Visible on the{' '}
+            <Link href="/transparency" className="text-white underline">Public Ledger</Link>.
+          </div>
+        </div>
+      </div>
+
+      {/* Receipt Modal */}
+      {receipt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.9)' }}>
+          <div className="card max-w-md w-full p-7">
+            <div className="text-center pb-4 mb-4" style={{ borderBottom: '1px solid #1a1a1a' }}>
+              <div className="w-12 h-12 rounded-full border flex items-center justify-center mx-auto mb-3 text-xl font-black" style={{ borderColor: '#3f3f3f', color: '#fff', background: '#1a1a1a' }}>✓</div>
+              <h3 className="text-lg font-black text-white">Contribution Recorded</h3>
+              <p className="text-xs mt-1" style={{ color: '#71717a' }}>Settled and posted to the public ledger.</p>
+            </div>
+            <div className="space-y-2 text-xs mono py-2">
+              {[
+                ['Receipt ID', receipt.id],
+                ['Amount',     `₹${receipt.amount.toLocaleString('en-IN')}`],
+                ['Gateway Ref',receipt.paymentRef],
+                ['Timestamp',  new Date(receipt.createdAt).toLocaleString('en-IN')],
+              ].map(([k, v]) => (
+                <div key={k} className="flex justify-between py-1" style={{ borderBottom: '1px solid #1a1a1a' }}>
+                  <span style={{ color: '#52525b' }}>{k}</span>
+                  <span className="text-white">{v}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 flex gap-3">
+              <Link href="/transparency" className="btn-ghost flex-1 justify-center">View on Ledger</Link>
+              <button onClick={() => setReceipt(null)} className="btn-primary flex-1 justify-center">Done</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
